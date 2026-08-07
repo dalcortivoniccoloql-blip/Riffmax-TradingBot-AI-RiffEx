@@ -1,13 +1,14 @@
 # place_test_trades.py
+import os
 import MetaTrader5 as mt5
 import pandas as pd
 import numpy as np
 from datetime import datetime
 
 MT5_CONFIG = {
-    "login": 81627783,
-    "password": "Iamgreat@2030",
-    "server": "Exness-MT5Trial10"
+    "login": int(os.environ.get("MT5_LOGIN") or 0),
+    "password": os.environ.get("MT5_PASSWORD", ""),
+    "server": os.environ.get("MT5_SERVER", ""),
 }
 
 def calculate_atr(df, period=14):

@@ -43,9 +43,9 @@ def load_environment_file() -> None:
 load_environment_file()
 
 MT5_CONFIG = {
-    "login": int(os.environ["MT5_LOGIN"]),
-    "password": os.environ["MT5_PASSWORD"],
-    "server": os.environ["MT5_SERVER"],
+    "login": int(os.environ.get("MT5_LOGIN") or 0),
+    "password": os.environ.get("MT5_PASSWORD", ""),
+    "server": os.environ.get("MT5_SERVER", ""),
 }
 
 SYMBOLS = [
@@ -66,7 +66,6 @@ from trading_bot_skills.indicators import (
     find_support_resistance,
 )
 from trading_bot_skills.risk import assess_risk
-from trading_bot_skills.token_stub import get_tradingagents_token
 from trading_bot_skills.trade_config import TELEGRAM_ENABLED, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
 
 def send_telegram_alert(message: str):

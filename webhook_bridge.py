@@ -17,11 +17,11 @@ logger = logging.getLogger("TradingViewBridge")
 
 app = FastAPI(title="TradingView MetaTrader 5 Webhook Bridge")
 
-# Verified MT5 Credentials
+# Credenziali MT5: lette dalle variabili d'ambiente / .env (vuote finche' non configurate)
 MT5_CONFIG = {
-    "login": 81627783,
-    "password": "Iamgreat@2030",
-    "server": "Exness-MT5Trial10"
+    "login": int(os.environ.get("MT5_LOGIN") or 0),
+    "password": os.environ.get("MT5_PASSWORD", ""),
+    "server": os.environ.get("MT5_SERVER", ""),
 }
 
 # Profit target to auto-close trades (in USD)

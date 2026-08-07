@@ -19,7 +19,7 @@ logging.basicConfig(
 logger = logging.getLogger("AutonomousScanner")
 
 # Add scratch path to sys.path to import strategy modules
-scratch_dir = r"C:/Users/DATA ENG. OLA/.gemini/antigravity/scratch"
+scratch_dir = os.path.dirname(os.path.abspath(__file__))
 if scratch_dir not in sys.path:
     sys.path.insert(0, scratch_dir)
 

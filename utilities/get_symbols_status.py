@@ -3,17 +3,17 @@ import MetaTrader5 as mt5
 import pandas as pd
 import numpy as np
 
-scratch_dir = r"C:/Users/DATA ENG. OLA/.gemini/antigravity/scratch"
 import sys, os
+scratch_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if scratch_dir not in sys.path:
     sys.path.insert(0, scratch_dir)
 
 from alphaedge import calculate_bollinger_bands, calculate_rsi, calculate_atr, find_support_resistance
 
 MT5_CONFIG = {
-    "login": 81627783,
-    "password": "Iamgreat@2030",
-    "server": "Exness-MT5Trial10"
+    "login": int(os.environ.get("MT5_LOGIN") or 0),
+    "password": os.environ.get("MT5_PASSWORD", ""),
+    "server": os.environ.get("MT5_SERVER", ""),
 }
 
 def analyze_symbol_proximity(symbol):

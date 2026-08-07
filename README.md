@@ -45,14 +45,14 @@ pip install fastapi uvicorn metatrader-mcp-server pydantic
 ### Step 2: Configure Antigravity MCP Server
 To allow Antigravity to check your balances, open positions, and manage trades using natural language, update your global Antigravity configuration file:
 
-**File Path:** `C:\Users\DATA ENG. OLA\.gemini\config\mcp_config.json`
+**File Path:** `%USERPROFILE%\.gemini\config\mcp_config.json`
 
 Add the `"metatrader"` server configuration:
 ```json
 {
   "mcpServers": {
     "metatrader": {
-      "command": "C:\\Users\\DATA ENG. OLA\\AppData\\Local\\Packages\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\LocalCache\\local-packages\\Python313\\Scripts\\metatrader-mcp-server.exe",
+      "command": "metatrader-mcp-server",
       "args": [
         "--login", "YOUR_MT5_LOGIN",
         "--password", "YOUR_MT5_PASSWORD",

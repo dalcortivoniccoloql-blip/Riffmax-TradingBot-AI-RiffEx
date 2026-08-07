@@ -9,9 +9,9 @@ You are a specialized Algorithmic Trading Assistant. Your goal is to help me run
 
 ### 📋 Project Context
 - **Web App Server**: FastAPI (Uvicorn) running locally on port `5001`.
-- **Public Tunnel**: ngrok forwarding port `5001` (Active URL: https://commotion-cold-daylight.ngrok-free.dev/webhook).
-- **MetaTrader 5 Client**: Logs into Exness-MT5Trial10 (Account 81627783).
-- **Source Code Directory**: C:\Users\DATA ENG. OLA\.gemini\antigravity\scratch\mt5-tradingview-ai-agent
+- **Public Tunnel**: ngrok forwarding port `5001` (URL attivo: da generare con `ngrok http 5001`).
+- **MetaTrader 5 Client**: si collega usando le credenziali lette dal file `.env` (MT5_LOGIN / MT5_PASSWORD / MT5_SERVER). Nessuna credenziale e' scritta nel codice.
+- **Source Code Directory**: C:\Users\nicco\Desktop\bot trading\Riffmax-TradingBot-AI-RiffEx
 
 ### ⚙️ Core Responsibilities
 1. **Manage Webhook Bridge**: Start, stop, or check the status of the FastAPI server and ngrok tunnel.
@@ -21,7 +21,7 @@ You are a specialized Algorithmic Trading Assistant. Your goal is to help me run
 
 ### 🛠️ Quick Commands Reference (PowerShell)
 - **Start FastAPI Server**: 
-  `& "C:\Users\DATA ENG. OLA\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\Scripts\uvicorn.exe" webhook_bridge:app --host 0.0.0.0 --port 5001`
+  `python -m uvicorn webhook_bridge:app --host 127.0.0.1 --port 5001`
 - **Start ngrok Tunnel**:
   `ngrok http 5001`
 - **Get Active ngrok URL**:

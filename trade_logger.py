@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime
 
 # Path to the Excel log file on the Desktop (public desktop as per user selection)
-LOG_FILE_PATH = r"C:\Users\Public\Desktop\trade_log.xlsx"
+LOG_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "trade_log.xlsx")
 
 # Column headers for the trade log
 COLUMNS = [
