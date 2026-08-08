@@ -329,6 +329,47 @@ def connect_mt5() -> None:
         )
 
 
+def print_scan_table(scan_results: dict) -> None:
+    """Stampa una riga per ogni simbolo analizzato, con esito e motivo.
+
+    Senza questa tabella la scansione mostra solo i segnali confermati, che
+    sono quasi sempre zero: si vede "nessun segnale" senza capire il perche'.
+    """
+    def prezzo(symbol: str, value: float) -> str:
+        if not value:
+            return "-"
+        info = mt5.symbol_info(symbol)
+        return format(value, "." + str(info.digits if info else 5) + "f")
+
+    def rapporto_rr(action: str, entry: float, sl: float, tp: float) -> str:
+        if action == "BUY" and entry > sl:
+            return format((tp - entry) / (entry - sl), ".2f")
+        if action == "SELL" and sl > entry:
+            return format((entry - tp) / (sl - entry), ".2f")
+        return "-"
+
+    intestazione = ("| {:<13} | {:<7} | {:>12} | {:>12} | {:>12} | {:>5} | {}")
+    print()
+    print("=== AlphaEdge - Scansione strutturale (M30) ===")
+    print(intestazione.format("Simbolo", "Esito", "Prezzo", "Stop Loss", "Take Profit", "R:R", "Motivo"))
+    print("|" + "-" * 15 + "|" + "-" * 9 + "|" + ("-" * 14 + "|") * 3 + "-" * 7 + "|" + "-" * 40)
+
+    # prima i segnali confermati, poi tutto il resto in ordine alfabetico
+    for symbol in sorted(scan_results, key=lambda s: (scan_results[s]["action"] == "NEUTRAL", s)):
+        r = scan_results[symbol]
+        action, sl, tp, entry = r["action"], r["sl"], r["tp"], r["entry_price"]
+        etichetta = symbol if action == "NEUTRAL" else "-> " + symbol
+        print(intestazione.format(
+            etichetta, action,
+            prezzo(symbol, entry), prezzo(symbol, sl), prezzo(symbol, tp),
+            rapporto_rr(action, entry, sl, tp), r["details"],
+        ))
+
+    confermati = sum(1 for r in scan_results.values() if r["action"] != "NEUTRAL")
+    print()
+    print("  " + str(len(scan_results)) + " simboli analizzati, " + str(confermati) + " segnali confermati.")
+
+
 def run_alphaedge(execute_orders: bool = False, approved_symbols: set[str] | None = None):
     connect_mt5()
     logger.info("AlphaEdge Strategy initialized.")
@@ -410,9 +451,7 @@ def run_alphaedge(execute_orders: bool = False, approved_symbols: set[str] | Non
         active_symbols = ensure_symbols_available(SYMBOLS)
         print(f"\n[Weekday Mode] Scanning active filtered symbols: {active_symbols}\n")
 
-    print("=== -> AlphaEdge Structural Tops/Bottoms Scan (M30 Timeframe) ===")
-    print("| Symbol | Setup | Price | Stop Loss | Take Profit | R:R | Analysis Details |")
-    print("| :--- | :--- | :--- | :--- | :--- | :--- | :--- |")
+    print("Analisi di " + str(len(active_symbols)) + " simboli in corso...")
     
     open_symbols = [p.symbol for p in open_positions] if open_positions else []
     
@@ -458,6 +497,8 @@ def run_alphaedge(execute_orders: bool = False, approved_symbols: set[str] | Non
                 xag["sl"] = 0.0
                 xag["tp"] = 0.0
                 
+    print_scan_table(scan_results)
+
     # --- Autonomous trading: place orders only when the structural edge strategy signals BUY or SELL ---
     triggers = []
     for symbol, result in scan_results.items():
