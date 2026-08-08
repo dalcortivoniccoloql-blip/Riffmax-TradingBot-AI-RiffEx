@@ -9,9 +9,6 @@ import numpy as np
 import sys, os
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(PROJECT_ROOT, ".agents"))
-from metatrader_client import MT5Client
-from metatrader_client.order.send_order import send_order
-from metatrader_client.types import TradeRequestActions, OrderType
 import MetaTrader5 as mt5
 
 # Set up logging to both console and file
@@ -289,14 +286,30 @@ def analyze_structural_edge(symbol: str):
         logger.error(f"Failed to analyze structural edge for {symbol}: {e}")
         return "NEUTRAL", 0.0, 0.0, 0.0, f"Error: {e}"
 
+def connect_mt5() -> None:
+    """Si collega a MetaTrader 5.
+
+    Se MT5_LOGIN e' valorizzato nel .env fa il login esplicito; altrimenti si
+    aggancia al terminale MT5 gia' aperto e gia' loggato (modo consigliato).
+    """
+    if MT5_CONFIG["login"]:
+        ok = mt5.initialize(
+            login=MT5_CONFIG["login"],
+            password=MT5_CONFIG["password"],
+            server=MT5_CONFIG["server"],
+        )
+    else:
+        ok = mt5.initialize()
+    if not ok:
+        raise RuntimeError(
+            f"Connessione a MT5 fallita: {mt5.last_error()}. "
+            "Controlla che il terminale MetaTrader 5 sia aperto e loggato."
+        )
+
+
 def run_alphaedge(execute_orders: bool = False, approved_symbols: set[str] | None = None):
-    client = MT5Client(MT5_CONFIG)
-    try:
-        client.connect()
-        logger.info("AlphaEdge Strategy initialized.")
-    except Exception as e:
-        logger.error(f"MT5 connection failed: {e}")
-        raise RuntimeError(f"MT5 connection failed: {e}")
+    connect_mt5()
+    logger.info("AlphaEdge Strategy initialized.")
         
     # 1. Check Daily Drawdown Limit (-$50) for active bots only
     now = datetime.now()
@@ -312,10 +325,10 @@ def run_alphaedge(execute_orders: bool = False, approved_symbols: set[str] | Non
             
     if daily_profit <= -MAX_DAILY_LOSS_USD or daily_profit >= DAILY_PROFIT_TARGET_USD:
         logger.warning(f"Daily guardrail reached: ${daily_profit:+.2f}. No new orders today.")
-        client.disconnect()
+        mt5.shutdown()
         return []
     #     logger.warning(f"Prop Firm Limit hit (Drawdown: -$200 / Target: +$400). Today's Net P&L: ${daily_profit:+.2f}. Disabling trades for today.")
-    #     client.disconnect()
+    #     mt5.shutdown()
     #     return
 
     # 2. Manage Breakeven for Active Positions
@@ -437,14 +450,14 @@ def run_alphaedge(execute_orders: bool = False, approved_symbols: set[str] | Non
 
     if not triggers:
         print("\n-> **No structural tops/bottoms confirmed for entry.** (Waiting for price to hit extreme S/R zones).")
-        client.disconnect()
+        mt5.shutdown()
         return []
 
     if not execute_orders:
         print("\n=== -> Approval Required: no orders submitted ===")
         for symbol, action, sl, tp, entry_price in triggers:
             print(f"PENDING | {symbol} | {action} | Entry {entry_price:.5f} | SL {sl:.5f} | TP {tp:.5f}")
-        client.disconnect()
+        mt5.shutdown()
         return triggers
 
     print("\n=== -> Executing Structural Edge Orders ===")
@@ -484,7 +497,7 @@ def run_alphaedge(execute_orders: bool = False, approved_symbols: set[str] | Non
         except Exception as e:
             logger.error(f"Order send error on {symbol}: {e}")
             
-    client.disconnect()
+    mt5.shutdown()
 
 if __name__ == "__main__":
     run_alphaedge()

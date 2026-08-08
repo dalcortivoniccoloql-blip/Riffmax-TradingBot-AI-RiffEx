@@ -1,4 +1,3 @@
-fastapi
-uvicorn
-metatrader-mcp-server
-pydantic
+MetaTrader5
+pandas
+numpy

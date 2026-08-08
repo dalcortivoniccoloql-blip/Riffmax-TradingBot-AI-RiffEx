@@ -23,9 +23,10 @@ def send_message(message: str) -> None:
 
 
 def status_message() -> str:
-    config = alphaedge.MT5_CONFIG
-    if not mt5.initialize(login=config["login"], password=config["password"], server=config["server"]):
-        return f"MT5 disconnected: {mt5.last_error()}"
+    try:
+        alphaedge.connect_mt5()
+    except Exception as error:
+        return f"MT5 disconnesso: {error}"
     account = mt5.account_info()
     positions = mt5.positions_get() or []
     mt5.shutdown()
@@ -36,9 +37,10 @@ def status_message() -> str:
 
 
 def positions_message() -> str:
-    config = alphaedge.MT5_CONFIG
-    if not mt5.initialize(login=config["login"], password=config["password"], server=config["server"]):
-        return f"MT5 disconnected: {mt5.last_error()}"
+    try:
+        alphaedge.connect_mt5()
+    except Exception as error:
+        return f"MT5 disconnesso: {error}"
     positions = mt5.positions_get() or []
     mt5.shutdown()
     if not positions:
