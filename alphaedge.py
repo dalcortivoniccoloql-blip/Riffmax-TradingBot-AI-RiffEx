@@ -46,10 +46,13 @@ MT5_CONFIG = {
 }
 
 SYMBOLS = [
-    # Refined Top Performers Only (including ETHUSD and US500)
-    "GBPUSD", "USDCAD", "EURGBP", "USTEC", "XAUUSD", "XAGUSD", "BTCUSD", "US30", "USOIL", "USDCHF", "ETHUSD", "US500",
-    "EURUSD", "USDJPY", "AUDUSD", "GBPJPY", "DE30", "SOLUSD", "XRPUSD", "LTCUSD"
+    # Nomi come li espone il broker FTMO (gli indici e il petrolio hanno il suffisso .cash)
+    "US100.cash", "XAUUSD",                                        # i due obiettivi principali
+    "US30.cash", "US500.cash", "GER40.cash", "USOIL.cash", "XAGUSD",
+    "EURUSD", "GBPUSD", "USDJPY", "USDCAD", "USDCHF", "AUDUSD", "EURGBP", "GBPJPY",
+    "BTCUSD", "ETHUSD", "SOLUSD", "XRPUSD", "LTCUSD",
 ]
+CRYPTO_KEYS = ("BTC", "ETH", "SOL", "XRP", "LTC")
 MAX_DAILY_LOSS_USD = 5.0
 DAILY_PROFIT_TARGET_USD = 50.0
 PULLBACK_ATR_FRACTION = 0.25
@@ -64,6 +67,25 @@ from trading_bot_skills.indicators import (
 )
 from trading_bot_skills.risk import assess_risk
 from trading_bot_skills.trade_config import TELEGRAM_ENABLED, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
+
+def ensure_symbols_available(symbols) -> list[str]:
+    """Porta i simboli nel Market Watch e scarta quelli che il broker non offre.
+
+    Senza symbol_select() MT5 non restituisce le quotazioni di un simbolo che
+    non e' gia' nella finestra Market Watch, e la scansione resterebbe vuota.
+    """
+    available = []
+    for name in symbols:
+        info = mt5.symbol_info(name)
+        if info is None:
+            logger.warning(f"Simbolo {name} non disponibile su questo broker: ignorato.")
+            continue
+        if not info.visible and not mt5.symbol_select(name, True):
+            logger.warning(f"Impossibile aggiungere {name} al Market Watch: ignorato.")
+            continue
+        available.append(name)
+    return available
+
 
 def send_telegram_alert(message: str):
     if not TELEGRAM_ENABLED:
@@ -381,11 +403,11 @@ def run_alphaedge(execute_orders: bool = False, approved_symbols: set[str] | Non
     
     if is_weekend:
         # Scan only major crypto symbols on weekends
-        active_symbols = [s.name for s in mt5.symbols_get() if "BTC" in s.name or "ETH" in s.name]
+        active_symbols = ensure_symbols_available([s for s in SYMBOLS if any(k in s for k in CRYPTO_KEYS)])
         print(f"\n[Weekend Mode] Forex and Gold markets are closed. Scanning Crypto only: {active_symbols}\n")
     else:
         # Scan all visible symbols that are in our custom SYMBOLS list on weekdays
-        active_symbols = [s.name for s in mt5.symbols_get() if s.visible and s.name in SYMBOLS]
+        active_symbols = ensure_symbols_available(SYMBOLS)
         print(f"\n[Weekday Mode] Scanning active filtered symbols: {active_symbols}\n")
 
     print("=== -> AlphaEdge Structural Tops/Bottoms Scan (M30 Timeframe) ===")
