@@ -68,6 +68,46 @@ from trading_bot_skills.indicators import (
 from trading_bot_skills.risk import assess_risk
 from trading_bot_skills.trade_config import TELEGRAM_ENABLED, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
 
+HISTORY_TIMEFRAMES = (mt5.TIMEFRAME_M5, mt5.TIMEFRAME_M30, mt5.TIMEFRAME_H1, mt5.TIMEFRAME_D1)
+HISTORY_MAX_WAIT_SECONDS = 30
+
+
+def history_is_aligned(symbol: str) -> bool:
+    """Vero se l'ultima barra M30 copre l'ultimo tick ricevuto.
+
+    MT5 scarica lo storico in modo asincrono: la prima lettura di un simbolo
+    rimasto fermo per giorni restituisce la cache vecchia e solo dopo aggiorna.
+    Confrontare barra e tick funziona anche a mercato chiuso, perche' in quel
+    caso sono vecchi entrambi.
+    """
+    tick = mt5.symbol_info_tick(symbol)
+    rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M30, 0, 1)
+    if tick is None or not tick.time or rates is None or len(rates) == 0:
+        return False
+    ritardo = tick.time - int(rates[0]["time"])
+    return -60 <= ritardo < 3600
+
+
+def warm_up_history(symbols, max_wait: int = HISTORY_MAX_WAIT_SECONDS) -> list:
+    """Forza il download dello storico e aspetta che sia allineato ai tick.
+
+    Restituisce i simboli che restano disallineati oltre max_wait: vanno
+    esclusi dall'analisi, perche' darebbero indicatori calcolati su prezzi
+    vecchi di giorni (RSI e bande completamente sbagliati).
+    """
+    scadenza = time.time() + max_wait
+    da_controllare = list(symbols)
+    while True:
+        for symbol in da_controllare:
+            for timeframe in HISTORY_TIMEFRAMES:
+                mt5.copy_rates_from_pos(symbol, timeframe, 0, 150)
+        da_controllare = [s for s in da_controllare if not history_is_aligned(s)]
+        if not da_controllare or time.time() >= scadenza:
+            return da_controllare
+        logger.info("Storico non ancora allineato per " + ", ".join(da_controllare) + ": attendo...")
+        time.sleep(2)
+
+
 def ensure_symbols_available(symbols) -> list[str]:
     """Porta i simboli nel Market Watch e scarta quelli che il broker non offre.
 
@@ -272,6 +312,10 @@ def analyze_structural_edge(symbol: str):
             details = f"Bottom Zone hit. Waiting for M5 EMA bullish crossover. RSI: {last_rsi:.1f} | M5: {m5_status} | H1: {h1_status}"
         elif is_top_zone and not m5_confirmed_sell:
             details = f"Top Zone hit. Waiting for M5 EMA bearish crossover. RSI: {last_rsi:.1f} | M5: {m5_status} | H1: {h1_status}"
+        elif is_bottom_zone and not d1_bullish:
+            details = f"Zona fondo + conferma M5, ma trend D1 non rialzista (serve close > EMA20 > EMA50). RSI: {last_rsi:.1f} | D1: close={d1_close:.5f} EMA20={d1_ema20:.5f} EMA50={d1_ema50:.5f}"
+        elif is_top_zone and not d1_bearish:
+            details = f"Zona cima + conferma M5, ma trend D1 non ribassista (serve close < EMA20 < EMA50). RSI: {last_rsi:.1f} | D1: close={d1_close:.5f} EMA20={d1_ema20:.5f} EMA50={d1_ema50:.5f}"
             
         if is_bottom:
             action = "BUY"
@@ -450,6 +494,11 @@ def run_alphaedge(execute_orders: bool = False, approved_symbols: set[str] | Non
         # Scan all visible symbols that are in our custom SYMBOLS list on weekdays
         active_symbols = ensure_symbols_available(SYMBOLS)
         print(f"\n[Weekday Mode] Scanning active filtered symbols: {active_symbols}\n")
+
+    non_allineati = warm_up_history(active_symbols)
+    if non_allineati:
+        logger.warning("Storico non affidabile, simboli esclusi da questa scansione: " + ", ".join(non_allineati))
+        active_symbols = [s for s in active_symbols if s not in non_allineati]
 
     print("Analisi di " + str(len(active_symbols)) + " simboli in corso...")
     
