@@ -4,3 +4,7 @@ __pycache__/
 *.pyc
 alphaedge.paused
 trade_log.csv
+alphaedge.lock
+alphaedge_dedup.json
+dry_run_log.csv
+.pytest_cache/

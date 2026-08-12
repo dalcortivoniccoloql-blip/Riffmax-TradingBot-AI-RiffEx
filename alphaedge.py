@@ -3,7 +3,7 @@ import sys
 import time
 import concurrent.futures
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
 import sys, os
@@ -53,8 +53,8 @@ SYMBOLS = [
     "BTCUSD", "ETHUSD", "SOLUSD", "XRPUSD", "LTCUSD",
 ]
 CRYPTO_KEYS = ("BTC", "ETH", "SOL", "XRP", "LTC")
-MAX_DAILY_LOSS_USD = 5.0
-DAILY_PROFIT_TARGET_USD = 50.0
+# I limiti di rischio NON sono piu' definiti qui: unica fonte autorevole e'
+# trading_bot_skills/risk_config.py (vedi P0-7).
 PULLBACK_ATR_FRACTION = 0.25
 PENDING_ORDER_EXPIRY_SECONDS = 7200
 
@@ -67,6 +67,39 @@ from trading_bot_skills.indicators import (
 )
 from trading_bot_skills.risk import assess_risk
 from trading_bot_skills.trade_config import TELEGRAM_ENABLED, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
+from trading_bot_skills.risk_config import (
+    ALPHAEDGE_MAGIC,
+    BACKOFF_CONNESSIONE_SECONDI,
+    DRY_RUN,
+    ETICHETTA_ORDINE,
+    MAX_PERDITA_GIORNALIERA_USD,
+    MAX_POSIZIONI_APERTE,
+    MAX_TENTATIVI_CONNESSIONE,
+    RISCHIO_OVERRIDE_PER_SIMBOLO,
+    RISCHIO_PER_TRADE_CAP_USD,
+    RISCHIO_PER_TRADE_MIN_USD,
+    RISCHIO_PER_TRADE_PCT,
+    TARGET_PROFITTO_GIORNALIERO_USD,
+)
+from trading_bot_skills.risk_engine import (
+    ProfiloRischio,
+    SpecificheSimbolo,
+    dimensiona,
+    perdita_giornaliera_superata,
+    pnl_realizzato_da_deal,
+)
+from trading_bot_skills.order_validation import valida_ordine
+from trading_bot_skills import dedup, process_lock
+
+PROFILO_RISCHIO = ProfiloRischio(
+    rischio_pct=RISCHIO_PER_TRADE_PCT,
+    cap_usd=RISCHIO_PER_TRADE_CAP_USD,
+    min_usd=RISCHIO_PER_TRADE_MIN_USD,
+    override_per_simbolo=dict(RISCHIO_OVERRIDE_PER_SIMBOLO),
+)
+PERCORSO_LOCK = os.path.join(PROJECT_ROOT, "alphaedge.lock")
+PERCORSO_DEDUP = os.path.join(PROJECT_ROOT, "alphaedge_dedup.json")
+PERCORSO_DRY_RUN = os.path.join(PROJECT_ROOT, "dry_run_log.csv")
 
 HISTORY_TIMEFRAMES = (mt5.TIMEFRAME_M5, mt5.TIMEFRAME_M30, mt5.TIMEFRAME_H1, mt5.TIMEFRAME_D1)
 HISTORY_MAX_WAIT_SECONDS = 30
@@ -147,12 +180,34 @@ def send_telegram_alert(message: str):
     except Exception as e:
         logger.error(f"Failed to send Telegram alert: {e}")
 
+def specifiche_simbolo(symbol: str):
+    """Traduce mt5.symbol_info() nella struttura usata dal Risk Engine."""
+    info = mt5.symbol_info(symbol)
+    if info is None:
+        return None
+    return SpecificheSimbolo(
+        nome=symbol,
+        tick_size=info.trade_tick_size,
+        tick_value=info.trade_tick_value_loss or info.trade_tick_value,
+        volume_min=info.volume_min,
+        volume_max=info.volume_max,
+        volume_step=info.volume_step,
+        digits=info.digits,
+    )
+
+
 def get_lot_size(symbol: str, sl_price: float = 0.0, entry_price: float = 0.0) -> float:
-    """Return the minimum allowable volume for the symbol to place a micro trade."""
-    symbol_info = mt5.symbol_info(symbol)
-    if not symbol_info:
-        return 0.01
-    return symbol_info.volume_min
+    """Lotto calcolato dal Risk Engine. Ritorna 0.0 quando il trade non e' ammesso.
+
+    Non ripiega MAI sul lotto minimo: era esattamente il bug che rendeva il
+    rischio per trade fino a 40 volte piu' alto su alcuni simboli.
+    """
+    specifiche = specifiche_simbolo(symbol)
+    if specifiche is None:
+        return 0.0
+    conto = mt5.account_info()
+    equity = conto.equity if conto else 0.0
+    return dimensiona(equity, PROFILO_RISCHIO, specifiche, entry_price, sl_price).lotto
 
 # Simple test lot size that respects the instrument's minimum volume
 def get_test_lot(symbol: str) -> float:
@@ -373,6 +428,99 @@ def connect_mt5() -> None:
         )
 
 
+def connessione_sana() -> bool:
+    """Vero se il terminale e' connesso e il conto e' leggibile."""
+    try:
+        terminale = mt5.terminal_info()
+        return bool(terminale and terminale.connected and mt5.account_info())
+    except Exception:
+        return False
+
+
+def assicura_connessione() -> bool:
+    """Riconnette con backoff esponenziale. Falso = il ciclo va saltato.
+
+    Meglio saltare un ciclo che analizzare dati parziali: una disconnessione
+    somiglia a un mercato tranquillo e produrrebbe NEUTRAL silenziosi.
+    """
+    if connessione_sana():
+        return True
+    attesa = BACKOFF_CONNESSIONE_SECONDI
+    for tentativo in range(1, MAX_TENTATIVI_CONNESSIONE + 1):
+        logger.warning(f"MT5 non raggiungibile: tentativo {tentativo}/{MAX_TENTATIVI_CONNESSIONE}")
+        try:
+            mt5.shutdown()
+        except Exception:
+            pass
+        try:
+            connect_mt5()
+        except Exception as errore:
+            logger.warning(f"Riconnessione fallita: {errore}")
+        if connessione_sana():
+            logger.info("Connessione a MT5 ripristinata.")
+            return True
+        time.sleep(attesa)
+        attesa *= 2
+    logger.error("MT5 irraggiungibile dopo tutti i tentativi: ciclo saltato.")
+    return False
+
+
+def ora_barra_corrente(symbol: str) -> int:
+    """Ora di apertura della barra M30 in corso: e' la chiave di deduplica."""
+    barre = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M30, 0, 1)
+    if barre is None or len(barre) == 0:
+        return 0
+    return int(barre[0]["time"])
+
+
+def registra_dry_run(request: dict, controllo) -> None:
+    """Salva richiesta e risposta di order_check() per poterle rivedere."""
+    import csv
+    campi = ["timestamp", "symbol", "type", "volume", "price", "sl", "tp",
+             "retcode", "comment_server", "margin", "equity_dopo"]
+    esiste = os.path.isfile(PERCORSO_DRY_RUN)
+    try:
+        with open(PERCORSO_DRY_RUN, "a", newline="", encoding="utf-8") as fh:
+            scrittore = csv.DictWriter(fh, fieldnames=campi)
+            if not esiste:
+                scrittore.writeheader()
+            scrittore.writerow({
+                "timestamp": datetime.now().isoformat(),
+                "symbol": request.get("symbol"),
+                "type": request.get("type"),
+                "volume": request.get("volume"),
+                "price": request.get("price"),
+                "sl": request.get("sl"),
+                "tp": request.get("tp"),
+                "retcode": getattr(controllo, "retcode", None),
+                "comment_server": getattr(controllo, "comment", None),
+                "margin": getattr(controllo, "margin", None),
+                "equity_dopo": getattr(controllo, "equity", None),
+            })
+    except Exception as errore:
+        logger.error(f"Impossibile scrivere il log dry-run: {errore}")
+
+
+def esegui_o_valida(request: dict):
+    """In DRY_RUN valida con order_check(); altrimenti invia con order_send().
+
+    order_check() interroga il server ma NON piazza nulla. Attenzione: non e'
+    garantito che validi tutto cio' che valida order_send(), quindi un dry-run
+    pulito non e' una prova che l'ordine reale passerebbe.
+    """
+    if DRY_RUN:
+        controllo = mt5.order_check(request)
+        registra_dry_run(request, controllo)
+        codice = getattr(controllo, "retcode", None)
+        commento = getattr(controllo, "comment", "")
+        logger.info(
+            f"[DRY-RUN] {request.get('symbol')} volume={request.get('volume')} "
+            f"-> retcode={codice} ({commento}). Nessun ordine inviato."
+        )
+        return None
+    return mt5.order_send(request)
+
+
 def print_scan_table(scan_results: dict) -> None:
     """Stampa una riga per ogni simbolo analizzato, con esito e motivo.
 
@@ -415,34 +563,36 @@ def print_scan_table(scan_results: dict) -> None:
 
 
 def run_alphaedge(execute_orders: bool = False, approved_symbols: set[str] | None = None):
-    connect_mt5()
+    try:
+        connect_mt5()
+    except Exception as errore:
+        logger.error(f"Connessione iniziale fallita: {errore}")
+    if not assicura_connessione():
+        return []
     logger.info("AlphaEdge Strategy initialized.")
         
-    # 1. Check Daily Drawdown Limit (-$50) for active bots only
-    now = datetime.now()
-    today_start = datetime(now.year, now.month, now.day, 0, 0, 0)
-    deals = mt5.history_deals_get(today_start, now)
-    daily_profit = 0.0
-    if deals:
-        df_deals = pd.DataFrame(list(deals), columns=deals[0]._asdict().keys())
-        our_pos_ids = df_deals[df_deals['comment'].isin(["ALPHAEDGE_TRADE", "SHERIFNEW_UT"]) & (df_deals['entry'] == 0)]['position_id'].unique()
-        exits_today = df_deals[df_deals['entry'].isin([1, 3]) & df_deals['position_id'].isin(our_pos_ids)]
-        if not exits_today.empty:
-            daily_profit = exits_today['profit'].sum() + exits_today['commission'].sum() + exits_today['swap'].sum()
-            
-    if daily_profit <= -MAX_DAILY_LOSS_USD or daily_profit >= DAILY_PROFIT_TARGET_USD:
-        logger.warning(f"Daily guardrail reached: ${daily_profit:+.2f}. No new orders today.")
+    # 1. Guardrail giornaliero: P&L REALIZZATO dei soli deal con il nostro magic.
+    #    La giornata e' quella del server del broker (GMT+3 su FTMO), non quella
+    #    locale: usare datetime.now() sfasava la finestra di 1-2 ore.
+    adesso_server = datetime.fromtimestamp(mt5.symbol_info_tick(SYMBOLS[0]).time) \
+        if mt5.symbol_info_tick(SYMBOLS[0]) else datetime.now()
+    inizio_giornata = datetime(adesso_server.year, adesso_server.month, adesso_server.day)
+    deals = mt5.history_deals_get(inizio_giornata, adesso_server + timedelta(days=1))
+    daily_profit = pnl_realizzato_da_deal(deals, ALPHAEDGE_MAGIC)
+
+    superato, motivo = perdita_giornaliera_superata(
+        daily_profit, MAX_PERDITA_GIORNALIERA_USD, TARGET_PROFITTO_GIORNALIERO_USD
+    )
+    if superato:
+        logger.warning(f"{motivo}. Nessun nuovo ordine oggi.")
         mt5.shutdown()
         return []
-    #     logger.warning(f"Prop Firm Limit hit (Drawdown: -$200 / Target: +$400). Today's Net P&L: ${daily_profit:+.2f}. Disabling trades for today.")
-    #     mt5.shutdown()
-    #     return
 
     # 2. Manage Breakeven for Active Positions
     open_positions = mt5.positions_get()
     if execute_orders and open_positions:
         for pos in open_positions:
-            if getattr(pos, 'comment', '') == "ALPHAEDGE_TRADE":
+            if getattr(pos, 'magic', 0) == ALPHAEDGE_MAGIC:
                 symbol = pos.symbol
                 rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M30, 0, 20)
                 if rates is not None and len(rates) >= 14:
@@ -576,9 +726,9 @@ def run_alphaedge(execute_orders: bool = False, approved_symbols: set[str] | Non
     open_positions = mt5.positions_get()
     active_symbols = []
     if open_positions:
-        active_symbols = [pos.symbol for pos in open_positions if getattr(pos, 'comment', '') == "ALPHAEDGE_TRADE"]
+        active_symbols = [pos.symbol for pos in open_positions if getattr(pos, 'magic', 0) == ALPHAEDGE_MAGIC]
     pending_orders = mt5.orders_get() or []
-    active_symbols.extend(order.symbol for order in pending_orders if getattr(order, 'comment', '') == "ALPHAEDGE_TRADE")
+    active_symbols.extend(order.symbol for order in pending_orders if getattr(order, 'magic', 0) == ALPHAEDGE_MAGIC)
 
     for symbol, action, sl, tp, entry_price in triggers:
         if approved_symbols is not None and symbol not in approved_symbols:
@@ -588,12 +738,69 @@ def run_alphaedge(execute_orders: bool = False, approved_symbols: set[str] | Non
             logger.info(f"Skipping execution for {symbol}: A trade is already active on this symbol.")
             continue
             
-        volume = get_lot_size(symbol, sl, entry_price)
+        if len(active_symbols) >= MAX_POSIZIONI_APERTE:
+            logger.warning(f"Raggiunto il massimo di {MAX_POSIZIONI_APERTE} posizioni: nessun nuovo ordine.")
+            break
+
+        # --- P0-1: il lotto viene dal Risk Engine, mai dal lotto minimo ---
+        specifiche = specifiche_simbolo(symbol)
+        if specifiche is None:
+            logger.error(f"{symbol}: specifiche non disponibili, nessun ordine.")
+            continue
+        conto = mt5.account_info()
+        esito_sizing = dimensiona(
+            conto.equity if conto else 0.0, PROFILO_RISCHIO, specifiche, entry_price, sl
+        )
+        if not esito_sizing.consentito:
+            logger.warning(
+                f"{symbol}: {esito_sizing.motivo} "
+                f"(al lotto minimo si rischierebbero {esito_sizing.rischio_effettivo_usd:.2f} USD, "
+                f"ammessi {esito_sizing.rischio_ammesso_usd:.2f})"
+            )
+            continue
+        volume = esito_sizing.lotto
+
+        # --- P0-6: SL e TP obbligatori e coerenti, sempre ---
+        info = mt5.symbol_info(symbol)
+        validazione = valida_ordine(
+            action, entry_price, sl, tp, volume,
+            digits=info.digits,
+            volume_min=info.volume_min,
+            volume_max=info.volume_max,
+            volume_step=info.volume_step,
+            distanza_minima_stop=info.trade_stops_level * info.point,
+        )
+        if not validazione.valido:
+            logger.error(f"{symbol}: ordine rifiutato dalla validazione: {validazione.motivo}")
+            continue
+
+        # --- P0-3: stesso segnale sulla stessa barra, una volta sola ---
+        chiave = dedup.costruisci_chiave(symbol, action, ora_barra_corrente(symbol))
+        if not dedup.registra(PERCORSO_DEDUP, chiave):
+            logger.info(f"{symbol}: segnale gia' trattato su questa barra, salto.")
+            continue
+
         order_type = mt5.ORDER_TYPE_BUY_LIMIT if action == "BUY" else mt5.ORDER_TYPE_SELL_LIMIT
-        
+
         try:
-            request = {"action": mt5.TRADE_ACTION_PENDING, "symbol": symbol, "volume": volume, "type": order_type, "price": round(entry_price, 5), "sl": round(sl, 5), "tp": round(tp, 5), "type_time": mt5.ORDER_TIME_SPECIFIED, "expiration": int(time.time()) + PENDING_ORDER_EXPIRY_SECONDS, "comment": "ALPHAEDGE_TRADE"}
-            result = mt5.order_send(request)
+            request = {
+                "action": mt5.TRADE_ACTION_PENDING,
+                "symbol": symbol,
+                "volume": validazione.volume,
+                "type": order_type,
+                "price": validazione.prezzo,
+                "sl": validazione.sl,
+                "tp": validazione.tp,
+                "type_time": mt5.ORDER_TIME_SPECIFIED,
+                "expiration": int(time.time()) + PENDING_ORDER_EXPIRY_SECONDS,
+                "magic": ALPHAEDGE_MAGIC,
+                "comment": ETICHETTA_ORDINE,
+            }
+            result = esegui_o_valida(request)
+            if result is None:
+                # dry-run: nessun ordine inviato, il segnale resta disponibile
+                dedup.dimentica(PERCORSO_DEDUP, chiave)
+                continue
             if result and result.retcode == mt5.TRADE_RETCODE_DONE:
                 ticket = result.order
                 logger.info(f"Successfully entered {action} on {symbol} (Ticket: {ticket}, SL: {sl:.5f}, TP: {tp:.5f})")
