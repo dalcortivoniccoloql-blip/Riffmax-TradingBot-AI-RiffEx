@@ -23,6 +23,8 @@ class RispostaCheck:
 class MT5Finto:
     """Registra le chiamate. order_send fa fallire il test se invocato."""
 
+    TRADE_ACTION_SLTP = 6      # stesso valore della costante reale di MetaTrader5
+
     def __init__(self):
         self.check_chiamato_con = []
         self.send_chiamato = False
@@ -111,6 +113,52 @@ def test_con_dry_run_disattivato_userebbe_order_send(mt5_finto, monkeypatch):
 
     with pytest.raises(AssertionError, match="order_send"):
         alphaedge.esegui_o_valida(RICHIESTA)
+
+    assert mt5_finto.send_chiamato
+
+
+RICHIESTA_SLTP = {
+    "action": MT5Finto.TRADE_ACTION_SLTP,
+    "position": 123_456,
+    "symbol": "US100.cash",
+    "sl": 29_650.0,
+    "tp": 29_800.0,
+}
+
+
+def test_dry_run_non_sposta_lo_stop_loss(mt5_finto, monkeypatch):
+    """Il trailing stop passava da order_send() diretto, scavalcando il dry-run."""
+    monkeypatch.setattr(alphaedge, "DRY_RUN", True)
+
+    risultato = alphaedge.esegui_o_valida(RICHIESTA_SLTP)
+
+    assert risultato is None
+    assert not mt5_finto.send_chiamato, "in dry-run l'SL non deve essere modificato davvero"
+
+
+def test_dry_run_non_chiama_order_check_su_una_richiesta_sltp(mt5_finto, monkeypatch):
+    """order_check() controlla margine e fondi: su un SLTP non ha nulla da dire."""
+    monkeypatch.setattr(alphaedge, "DRY_RUN", True)
+
+    alphaedge.esegui_o_valida(RICHIESTA_SLTP)
+
+    assert mt5_finto.check_chiamato_con == []
+
+
+def test_dry_run_non_sporca_il_csv_con_le_richieste_sltp(mt5_finto, monkeypatch, tmp_path):
+    monkeypatch.setattr(alphaedge, "DRY_RUN", True)
+
+    alphaedge.esegui_o_valida(RICHIESTA_SLTP)
+
+    assert not (tmp_path / "dry_run.csv").exists()
+
+
+def test_senza_dry_run_la_richiesta_sltp_viene_inviata(mt5_finto, monkeypatch):
+    """Il gate deve fermare solo il dry-run, non il funzionamento normale."""
+    monkeypatch.setattr(alphaedge, "DRY_RUN", False)
+
+    with pytest.raises(AssertionError, match="order_send"):
+        alphaedge.esegui_o_valida(RICHIESTA_SLTP)
 
     assert mt5_finto.send_chiamato
 

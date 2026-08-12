@@ -509,6 +509,16 @@ def esegui_o_valida(request: dict):
     pulito non e' una prova che l'ordine reale passerebbe.
     """
     if DRY_RUN:
+        # order_check() verifica margine e fondi di un ORDINE NUOVO. Su una
+        # richiesta SLTP (sposta solo SL/TP di una posizione gia' aperta) non
+        # ha nulla da validare: restituirebbe un retcode privo di significato
+        # e scriverebbe una riga fasulla nel log dry-run. Qui basta l'intento.
+        if request.get("action") == mt5.TRADE_ACTION_SLTP:
+            logger.info(
+                f"[DRY-RUN] {request.get('symbol')} posizione={request.get('position')} "
+                f"-> SL NON spostato (target {request.get('sl')}). Nessun ordine inviato."
+            )
+            return None
         controllo = mt5.order_check(request)
         registra_dry_run(request, controllo)
         codice = getattr(controllo, "retcode", None)
@@ -624,13 +634,19 @@ def run_alphaedge(execute_orders: bool = False, approved_symbols: set[str] | Non
                                 "sl": target_sl,
                                 "tp": pos.tp
                             }
-                            res = mt5.order_send(request)
-                            if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+                            res = esegui_o_valida(request)
+                            if res is None:
+                                # In DRY_RUN il wrapper ha gia' loggato e non ha
+                                # inviato nulla. Fuori da DRY_RUN un None e'
+                                # invece un fallimento vero di order_send().
+                                if not DRY_RUN:
+                                    logger.error(f"Failed to adjust SL to breakeven for {symbol}: nessuna risposta da order_send()")
+                            elif res.retcode == mt5.TRADE_RETCODE_DONE:
                                 msg = f"🔒 <b>[AlphaEdge SL Adjusted]</b>\nSymbol: {symbol}\nPosition: {pos.ticket}\nAction: Moved SL to SECURE PROFIT ({target_sl}) (1.0x ATR profit reached)"
                                 logger.info(f"Moved SL to SECURE PROFIT ({target_sl}) for {symbol} position {pos.ticket} (1.0x ATR profit reached)")
                                 send_telegram_alert(msg)
                             else:
-                                logger.error(f"Failed to adjust SL to breakeven for {symbol}: {res.retcode if res else 'N/A'} ({res.comment if res else ''})")
+                                logger.error(f"Failed to adjust SL to breakeven for {symbol}: {res.retcode} ({res.comment})")
 
     # Check if weekend (Saturday=5, Sunday=6) to filter for Crypto only
     current_day = datetime.now().weekday()
