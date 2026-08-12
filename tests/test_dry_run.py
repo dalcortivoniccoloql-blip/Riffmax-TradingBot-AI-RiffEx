@@ -163,10 +163,10 @@ def test_senza_dry_run_la_richiesta_sltp_viene_inviata(mt5_finto, monkeypatch):
     assert mt5_finto.send_chiamato
 
 
-def test_il_profilo_di_rischio_non_e_configurato_di_default():
-    """D1 ancora aperta: senza decisione economica il sizing rifiuta tutto."""
-    assert alphaedge.PROFILO_RISCHIO.rischio_pct is None
-    assert alphaedge.PROFILO_RISCHIO.cap_usd is None
+def test_il_profilo_di_rischio_e_quello_deciso_in_d1():
+    """D1 chiusa il 2026-08-12: 0,25% dell'equity con tetto assoluto a $25."""
+    assert alphaedge.PROFILO_RISCHIO.rischio_pct == 0.25
+    assert alphaedge.PROFILO_RISCHIO.cap_usd == 25.0
 
 
 def test_il_magic_e_impostato_e_non_nullo():

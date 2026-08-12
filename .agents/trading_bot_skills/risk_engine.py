@@ -183,6 +183,41 @@ def perdita_giornaliera_superata(
     return False, ""
 
 
+def drawdown_interno_superato(
+    equity: float,
+    baseline_equity: float,
+    max_drawdown_usd: float,
+) -> tuple[bool, str]:
+    """Guardrail sul capitale complessivo. Funzione pura.
+
+    Misura l'EQUITY, non il P&L realizzato: include quindi il flottante delle
+    posizioni aperte e qualunque operazione fatta a mano sul conto. E' un
+    controllo DIVERSO da perdita_giornaliera_superata(), non una sua versione
+    piu' severa.
+
+    Statico: il pavimento e' baseline_equity - max_drawdown_usd e non si sposta
+    quando l'equity sale. Un drawdown trailing dal picco sarebbe un altro
+    limite e va deciso esplicitamente.
+
+    Il confronto e' `<=`: toccare esattamente il pavimento lo considera violato.
+    Un'equity non positiva e' sempre una violazione: significa conto azzerato o
+    dato non disponibile, e in entrambi i casi non si apre nulla.
+    """
+    pavimento = baseline_equity - abs(max_drawdown_usd)
+
+    if equity <= 0:
+        return True, f"Equity non disponibile o azzerata ({equity:.2f} USD): nessun nuovo ordine"
+
+    if equity <= pavimento:
+        perdita = baseline_equity - equity
+        return True, (
+            f"Drawdown interno massimo raggiunto: equity {equity:.2f} USD, "
+            f"pavimento {pavimento:.2f} USD (perdita {perdita:.2f} su un massimo di {abs(max_drawdown_usd):.2f})"
+        )
+
+    return False, ""
+
+
 def pnl_realizzato_da_deal(deal, magic: int) -> float:
     """Somma profit + commission + swap dei soli deal di USCITA con il nostro magic.
 

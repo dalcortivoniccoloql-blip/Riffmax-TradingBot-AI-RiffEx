@@ -3,7 +3,7 @@ import sys
 import time
 import concurrent.futures
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import pandas as pd
 import numpy as np
 import sys, os
@@ -70,8 +70,10 @@ from trading_bot_skills.trade_config import TELEGRAM_ENABLED, TELEGRAM_TOKEN, TE
 from trading_bot_skills.risk_config import (
     ALPHAEDGE_MAGIC,
     BACKOFF_CONNESSIONE_SECONDI,
+    BASELINE_EQUITY_USD,
     DRY_RUN,
     ETICHETTA_ORDINE,
+    MAX_DRAWDOWN_INTERNO_USD,
     MAX_PERDITA_GIORNALIERA_USD,
     MAX_POSIZIONI_APERTE,
     MAX_TENTATIVI_CONNESSIONE,
@@ -85,6 +87,7 @@ from trading_bot_skills.risk_engine import (
     ProfiloRischio,
     SpecificheSimbolo,
     dimensiona,
+    drawdown_interno_superato,
     perdita_giornaliera_superata,
     pnl_realizzato_da_deal,
 )
@@ -473,6 +476,29 @@ def ora_barra_corrente(symbol: str) -> int:
     return int(barre[0]["time"])
 
 
+def ora_server_corrente() -> datetime:
+    """Orologio del server del broker, senza contaminazioni dal fuso del PC.
+
+    MT5 restituisce i timestamp gia' espressi nell'ora del server (GMT+3 su
+    FTMO) ma confezionati come se fossero epoch UTC. datetime.fromtimestamp()
+    ci aggiungerebbe sopra ANCHE l'offset locale della macchina: su questo PC
+    (GMT+2) la giornata risultava spostata di due ore, e su un PC in un altro
+    fuso sarebbe risultata spostata di un'altra quantita' ancora. Convertendo
+    con tz=utc e togliendo poi il fuso si ottiene l'orologio del server, uguale
+    ovunque giri il bot.
+
+    ATTENZIONE, disallineamento noto e non risolto qui: la giornata del server
+    (GMT+3) inizia un'ora prima della giornata FTMO, che si azzera alle 00:00
+    CE(S)T. Il nostro limite giornaliero interno ($75) e' molto piu' stretto di
+    quello FTMO ($500), quindi lo sfasamento non ci espone, ma resta una
+    differenza da sanare prima di avvicinarsi ai limiti del broker.
+    """
+    tick = mt5.symbol_info_tick(SYMBOLS[0])
+    if tick is None:
+        return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.fromtimestamp(tick.time, tz=timezone.utc).replace(tzinfo=None)
+
+
 def registra_dry_run(request: dict, controllo) -> None:
     """Salva richiesta e risposta di order_check() per poterle rivedere."""
     import csv
@@ -584,8 +610,7 @@ def run_alphaedge(execute_orders: bool = False, approved_symbols: set[str] | Non
     # 1. Guardrail giornaliero: P&L REALIZZATO dei soli deal con il nostro magic.
     #    La giornata e' quella del server del broker (GMT+3 su FTMO), non quella
     #    locale: usare datetime.now() sfasava la finestra di 1-2 ore.
-    adesso_server = datetime.fromtimestamp(mt5.symbol_info_tick(SYMBOLS[0]).time) \
-        if mt5.symbol_info_tick(SYMBOLS[0]) else datetime.now()
+    adesso_server = ora_server_corrente()
     inizio_giornata = datetime(adesso_server.year, adesso_server.month, adesso_server.day)
     deals = mt5.history_deals_get(inizio_giornata, adesso_server + timedelta(days=1))
     daily_profit = pnl_realizzato_da_deal(deals, ALPHAEDGE_MAGIC)
@@ -595,6 +620,19 @@ def run_alphaedge(execute_orders: bool = False, approved_symbols: set[str] | Non
     )
     if superato:
         logger.warning(f"{motivo}. Nessun nuovo ordine oggi.")
+        mt5.shutdown()
+        return []
+
+    # 1-bis. Guardrail sul capitale: si misura sull'EQUITY, quindi vede anche il
+    #    flottante delle posizioni aperte e le operazioni fatte a mano, che il
+    #    controllo giornaliero qui sopra non vede.
+    conto_guardrail = mt5.account_info()
+    equity_corrente = conto_guardrail.equity if conto_guardrail else 0.0
+    dd_superato, motivo_dd = drawdown_interno_superato(
+        equity_corrente, BASELINE_EQUITY_USD, MAX_DRAWDOWN_INTERNO_USD
+    )
+    if dd_superato:
+        logger.warning(f"{motivo_dd}. Nessun nuovo ordine.")
         mt5.shutdown()
         return []
 
