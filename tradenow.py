@@ -1,3 +1,33 @@
+# ---------------------------------------------------------------------------
+# CANCELLO DI SICUREZZA P0 -- NON RIMUOVERE
+# ---------------------------------------------------------------------------
+# Questo file e' un entry point LEGACY. Invia ordini A MERCATO con volumi
+# scritti a mano, e non passa da NIENTE di cio' che protegge alphaedge.py:
+# niente Risk Engine, niente magic number, niente validazione SL/TP, niente
+# deduplica, niente lock di processo, niente dry-run.
+#
+# Il controllo sta PRIMA di ogni altro import di proposito: cosi' il file si
+# ferma anche se le sue dipendenze cambiano o vengono installate.
+#
+# Oggi importa metatrader_client, che NON e' installato e non e' in
+# requirements.txt: da solo questo lo rende inerte. Ma e' un caso, non una
+# garanzia. Il cancello e' la garanzia.
+#
+# Per eseguirlo davvero servono due variabili d'ambiente esplicite, insieme:
+#   ALPHAEDGE_DRY_RUN=0   e   ALPHAEDGE_LEGACY_OK=1
+import os as _os_guardia
+import sys as _sys_guardia
+
+if (_os_guardia.getenv("ALPHAEDGE_DRY_RUN", "1") != "0"
+        or _os_guardia.getenv("ALPHAEDGE_LEGACY_OK") != "1"):
+    _sys_guardia.exit(
+        "BLOCCATO dal cancello di sicurezza P0: questo entry point legacy invia "
+        "ordini a mercato senza Risk Engine e senza dry-run.\n"
+        "Per usarlo consapevolmente servono insieme: "
+        "ALPHAEDGE_DRY_RUN=0 e ALPHAEDGE_LEGACY_OK=1."
+    )
+# ---------------------------------------------------------------------------
+
 import os
 import sys
 import time
