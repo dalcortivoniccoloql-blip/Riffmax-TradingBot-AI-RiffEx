@@ -1,0 +1,145 @@
+====================================================================================================
+VERIFICA POSITION SIZING CON SL REALI DELLA STRATEGIA
+====================================================================================================
+Momento della misura : 2026-08-12 21:34:11 UTC
+Conto                : 1514232107 su FTMO-Demo
+Equity               : 10000.00 USD
+Profilo di rischio   : 0.25% con tetto 25.0 USD
+Rischio ammesso ora  : 25.00 USD
+Algo Trading attivo  : False
+DRY_RUN              : True
+
+--- XAUUSD ---
+    strategia: NEUTRAL | RSI: 37.3 | BB Range: 4396.68668 - 4436.26332 | Price: 4408.14000 | H1: H1 Bearish/Overbought (RSI: 52.2)
+    nessun segnale. ATR=12.51214 RSI=37.3 supporto=4356.65000 resistenza=4441.26000
+--- XAGUSD ---
+    strategia: NEUTRAL | RSI: 26.3 | BB Range: 64.89182 - 66.60018 | Price: 65.26000 | H1: H1 Bearish/Overbought (RSI: 38.1)
+    nessun segnale. ATR=0.29893 RSI=26.3 supporto=64.20300 resistenza=66.76600
+--- US100.cash ---
+    strategia: NEUTRAL | RSI: 33.2 | BB Range: 29684.57127 - 29861.01173 | Price: 29706.34000 | H1: H1 Bullish (RSI: 58.7)
+    nessun segnale. ATR=53.66429 RSI=33.2 supporto=29423.33000 resistenza=29776.63000
+--- EURUSD ---
+    strategia: NEUTRAL | Bottom Zone hit. Waiting for M5 EMA bullish crossover. RSI: 19.9 | M5: No Cross (EMA5: 1.15217, EMA13: 1.15223) | H1: H1 Bearish/Overbought (RSI: 39.1)
+    nessun segnale. ATR=0.00050 RSI=19.9 supporto=1.15198 resistenza=1.15483
+
+====================================================================================================
+RISULTATI
+====================================================================================================
+
+XAUUSD  [BUY]  IPOTETICO (no segnale)
+    entry                  : 4405.01196
+    stop loss              : 4344.13786
+    distanza SL            : 60.87411
+    lotto calcolato        : 0.0
+    lotto minimo broker    : 0.01
+    rischio monetario      : 60.87 USD
+    rischio percentuale    : 0.6087% dell'equity
+    rischio ammesso        : 25.00 USD
+    spread ora             : 47 punti = 0.00 USD sul lotto calcolato
+    ESITO                  : NO TRADE -- NO TRADE - POSITION SIZE INCOMPATIBLE WITH RISK LIMIT
+
+XAUUSD  [SELL]  IPOTETICO (no segnale)
+    entry                  : 4411.26804
+    stop loss              : 4453.77214
+    distanza SL            : 42.50411
+    lotto calcolato        : 0.0
+    lotto minimo broker    : 0.01
+    rischio monetario      : 42.50 USD
+    rischio percentuale    : 0.4250% dell'equity
+    rischio ammesso        : 25.00 USD
+    spread ora             : 47 punti = 0.00 USD sul lotto calcolato
+    ESITO                  : NO TRADE -- NO TRADE - POSITION SIZE INCOMPATIBLE WITH RISK LIMIT
+
+XAGUSD  [BUY]  IPOTETICO (no segnale)
+    entry                  : 65.18527
+    stop loss              : 63.90407
+    distanza SL            : 1.28120
+    lotto calcolato        : 0.0
+    lotto minimo broker    : 0.01
+    rischio monetario      : 64.06 USD
+    rischio percentuale    : 0.6406% dell'equity
+    rischio ammesso        : 25.00 USD
+    spread ora             : 45 punti = 0.00 USD sul lotto calcolato
+    ESITO                  : NO TRADE -- NO TRADE - POSITION SIZE INCOMPATIBLE WITH RISK LIMIT
+
+XAGUSD  [SELL]  IPOTETICO (no segnale)
+    entry                  : 65.33473
+    stop loss              : 67.06493
+    distanza SL            : 1.73020
+    lotto calcolato        : 0.0
+    lotto minimo broker    : 0.01
+    rischio monetario      : 86.51 USD
+    rischio percentuale    : 0.8651% dell'equity
+    rischio ammesso        : 25.00 USD
+    spread ora             : 45 punti = 0.00 USD sul lotto calcolato
+    ESITO                  : NO TRADE -- NO TRADE - POSITION SIZE INCOMPATIBLE WITH RISK LIMIT
+
+US100.cash  [BUY]  IPOTETICO (no segnale)
+    entry                  : 29692.92393
+    stop loss              : 29369.66571
+    distanza SL            : 323.25821
+    lotto calcolato        : 0.07
+    lotto minimo broker    : 0.01
+    rischio monetario      : 22.63 USD
+    rischio percentuale    : 0.2263% dell'equity
+    rischio ammesso        : 25.00 USD
+    spread ora             : 153 punti = 0.11 USD sul lotto calcolato
+    ESITO                  : TRADE AMMESSO -- OK
+
+US100.cash  [SELL]  IPOTETICO (no segnale)
+    entry                  : 29719.75607
+    stop loss              : 29830.29429
+    distanza SL            : 110.53821
+    lotto calcolato        : 0.22
+    lotto minimo broker    : 0.01
+    rischio monetario      : 24.32 USD
+    rischio percentuale    : 0.2432% dell'equity
+    rischio ammesso        : 25.00 USD
+    spread ora             : 153 punti = 0.34 USD sul lotto calcolato
+    ESITO                  : TRADE AMMESSO -- OK
+
+EURUSD  [BUY]  IPOTETICO (no segnale)
+    entry                  : 1.15205
+    stop loss              : 1.15148
+    distanza SL            : 0.00058
+    lotto calcolato        : 0.43
+    lotto minimo broker    : 0.01
+    rischio monetario      : 24.75 USD
+    rischio percentuale    : 0.2475% dell'equity
+    rischio ammesso        : 25.00 USD
+    spread ora             : 21 punti = 9.03 USD sul lotto calcolato
+    ESITO                  : TRADE AMMESSO -- OK
+
+EURUSD  [SELL]  IPOTETICO (no segnale)
+    entry                  : 1.15231
+    stop loss              : 1.15533
+    distanza SL            : 0.00303
+    lotto calcolato        : 0.08
+    lotto minimo broker    : 0.01
+    rischio monetario      : 24.20 USD
+    rischio percentuale    : 0.2420% dell'equity
+    rischio ammesso        : 25.00 USD
+    spread ora             : 21 punti = 1.68 USD sul lotto calcolato
+    ESITO                  : TRADE AMMESSO -- OK
+
+====================================================================================================
+NOTE CHE CONTANO PER LEGGERE QUESTA TABELLA
+====================================================================================================
+1. Lo spread NON va sommato al rischio, e la colonna qui sopra e' solo
+   informativa. Il motivo: AlphaEdge entra con ordini LIMITE. Un BUY
+   LIMIT a P viene eseguito quando l'ask tocca P, quindi si compra a P;
+   lo stop di un long scatta sul bid a S, quindi si esce a S. La perdita
+   e' P - S, cioe' esattamente la distanza usata per il sizing. Lo stesso
+   vale al contrario per il SELL LIMIT. Lo spread e' gia' dentro.
+2. Quello che NON e' compreso e' commissioni e swap: il sizing non li
+   vede, quindi la perdita reale a stop e' superiore di quella quota.
+3. Dove lo spread pesa davvero e' sulla PROBABILITA' di essere stoppati,
+   non sulla dimensione della perdita: su uno stop da 5,6 pip con 2,1 pip
+   di spread il margine di manovra e' minimo. Guardare il rapporto fra la
+   colonna spread e la distanza SL, non la sua somma col rischio.
+4. Lo spread notturno e' molto piu' largo di quello di sessione: se
+   l'orario della misura qui sopra e' fuori sessione, il valore in punti
+   NON e' rappresentativo.
+5. Le righe IPOTETICO non sono segnali: sono le formule della strategia
+   applicate al mercato di adesso, per sapere quanto rischierebbe quel
+   simbolo se il segnale arrivasse.
